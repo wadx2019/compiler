@@ -1,2 +1,2 @@
-# compiler
-self-designed compiler frontend
+# 编译原理龙书附录A文法的编译器前端（LR(1)）
+
