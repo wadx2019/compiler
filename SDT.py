@@ -171,6 +171,7 @@ _first=1
 symtable=[None,{}]
 tmpcnt=[None,0]
 codeseq=[]
+error=False
 """----------------control var end------------"""
 def solvenum(product):
     return G.index(list(product))
@@ -207,13 +208,17 @@ def symappend(sym,etype):
 def offset(etype):
     tmp=etype
     off=1
+    
     while type(tmp)!=tuple:
         off*=tmp[0]
     return off
 
 def getid(idname):
-    if idname in symtable[1]:
-        return symtable[1][idname]
+    symtmp=symtable
+    while symtmp:
+        if idname in symtmp[1]:
+            return symtmp[1][idname]
+        symtmp=symtmp[0]
     else:
         return "error"
     
@@ -225,8 +230,15 @@ def maxtype(t1,t2):
     elif t1=="int" or t2=="int":
         return "int"
     else:
-        return "char"
-
+        return "char"        
+    
+def modify_jmps(pos,shift):
+    for i in range(len(codeseq)):
+        if codeseq[i][0].startswith("j") and codeseq[i][3]!=None and codeseq[i][3]>=pos:
+            tmpls=list(codeseq[i])
+            tmpls[3]+=shift
+            codeseq[i]=tuple(tmpls)
+    
 def Action(num,sstack,cstack,astack):
     global symtable,domain,tmpcnt,codeseq
     if num in [41,42,43,44]:
@@ -417,6 +429,7 @@ def Action(num,sstack,cstack,astack):
     elif num==12:
         bool1=astack[-3]
         stmt1=astack[-1]
+        codeseq.append(("jmp",None,None,bool1[_offset]))
         ltrue=stmt1[_first]
         lfalse=len(codeseq)
         truelist=stmt1[_nextlist][1]+bool1[_enxtls][1]
@@ -429,11 +442,55 @@ def Action(num,sstack,cstack,astack):
             tmpls=list(codeseq[i])
             tmpls[3]=lfalse
             codeseq[i]=tuple(tmpls)
-        return ([[],[]],bool1[_first])
+        return ([[],[]],bool1[_offset])
     
     elif num==11:
-
-    elif num in [9,10]:
+        stmt1=astack[-3]
+        stmt2=astack[-1]
+        bool1=astack[-5]
+        ltrue=stmt1[_first]
+        lfalse=stmt2[_first]+1
+        lend=len(codeseq)+1
+        codeseq.insert(stmt2[_first],("jmp",None,None,lend))
+        modify_jmps(stmt2[_first],1)
+        truelist=bool1[_enxtls][1]
+        falselist=bool1[_enxtls][0]
+        for i in truelist:
+            tmpls=list(codeseq[i])
+            tmpls[3]=ltrue
+            codeseq[i]=tuple(tmpls)
+        for i in falselist:
+            tmpls=list(codeseq[i])
+            tmpls[3]=lfalse
+            codeseq[i]=tuple(tmpls)
+        for i in stmt1[_nextlist][0]+stmt2[_nextlist][0]:
+            tmpls=list(codeseq[i])
+            tmpls[3]=lend
+            codeseq[i]=tuple(tmpls)
+        return ([[],[]],bool1[_offset])
+        
+    elif num==10:
+        stmt1=astack[-1]
+        bool1=astack[-3]
+        ltrue=stmt1[_first]
+        lfalse=len(codeseq)
+        truelist=bool1[_enxtls][1]
+        falselist=bool1[_enxtls][0]+stmt1[_nextlist][0]
+        for i in truelist:
+            tmpls=list(codeseq[i])
+            tmpls[3]=ltrue
+            codeseq[i]=tuple(tmpls)
+        for i in falselist:
+            tmpls=list(codeseq[i])
+            tmpls[3]=lfalse
+            codeseq[i]=tuple(tmpls)
+        return ([[],[]],bool1[_offset])
+    
+    elif num==9:
+        bool1=astack[-2]
+        loc1=astack[-4]
+        codeseq.append(("=",bool1[_value],None,loc1[_value]))
+        return ([[],[]],bool1[_offset])
         
     elif num==8:
         return ([[],[]],-1)
@@ -527,7 +584,6 @@ def Parser(src):
                 print("syntax error in line",i+1)
                 j+=1
                 
-        
 if __name__=="__main__":
     with open("test.lex","r") as f:
         content=f.read()
@@ -541,6 +597,74 @@ if __name__=="__main__":
                     linestmp[i].append(eval(item))
         lines=linestmp
         Parser(lines)
+        codeseq.append(("nop",None,None,None))
+##-------------------code del------------------------##
+##-----------------none code del---------------------##
+        codewithlabel=[]
+        for i,item in enumerate(codeseq):
+            if item[0].startswith("j") and item[3]!=None:
+                itmp=item[3]
+                while codeseq[itmp][0].startswith("j") and codeseq[itmp][3]==None:
+                    itmp+=1
+                else:
+                    item=(item[0],item[1],item[2],itmp)
+            codewithlabel.append([i,item])
+        deltable=set()
+        for item in codewithlabel:
+            code=item[1]
+            if code[0].startswith("j") and code[3]==None:
+                deltable.add(item[0])
+        codetmp=[]
+        for i,item in enumerate(codewithlabel):
+            if i not in deltable:
+                codetmp.append(item)
+        maptable={}
+        for i,item in enumerate(codetmp):
+            maptable[item[0]]=i
+        codeseq=[]
+        for i,item in enumerate(codetmp):
+            code=list(item[1])
+            if code[0].startswith("j"):
+                code[3]=maptable[code[3]]
+            codeseq.append(tuple(code))
+##--------------near goto code del-------------------##
+        codewithlabel=[]
+        for i,item in enumerate(codeseq):
+            if item[0].startswith("j") and item[3]!=i+1:
+                itmp=item[3]
+                while codeseq[itmp][0].startswith("j") and codeseq[itmp][3]==itmp+1:
+                    itmp+=1
+                else:
+                    item=(item[0],item[1],item[2],itmp)
+            codewithlabel.append([i,item])
+        deltable=set()
+        for item in codewithlabel:
+            code=item[1]
+            if code[0].startswith("j") and code[3]==item[0]+1:
+                deltable.add(item[0])
+        codetmp=[]
+        for i,item in enumerate(codewithlabel):
+            if i not in deltable:
+                codetmp.append(item)
+        maptable={}
+        for i,item in enumerate(codetmp):
+            maptable[item[0]]=i
+        codeseq=[]
+        for i,item in enumerate(codetmp):
+            code=list(item[1])
+            if code[0].startswith("j"):
+                code[3]=maptable[code[3]]
+            codeseq.append([i,tuple(code)])
+##------------------code del end---------------------##
+    if not error:
+        with open("test.ir","w") as f:
+            codeseqstr=[]
+            for item in codeseq:
+                codeseqstr.append(str(item[0])+'\t'+str(item[1])+"\n")
+            f.writelines(codeseqstr)
+        
+                
+            
         
         
         
