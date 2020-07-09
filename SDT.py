@@ -199,10 +199,11 @@ def gentmp():
     return tmp
 
 def symappend(sym,etype):
-    global symtable
+    global symtable,error
     if sym not in symtable[1]:
         symtable[1][sym]=etype
     else:
+        error=True
         return "error"
     
 def offset(etype):
@@ -214,16 +215,20 @@ def offset(etype):
     return off
 
 def getid(idname):
+    global error
     symtmp=symtable
     while symtmp:
         if idname in symtmp[1]:
             return symtmp[1][idname]
         symtmp=symtmp[0]
     else:
+        error=True
         return "error"
     
 def maxtype(t1,t2):
+    global error
     if t1 not in ["int","float","char"] or t2 not in ["int","float","char"]:
+        error=True
         return "error"
     elif t1=="float" or t2=="float":
         return "float"
@@ -239,7 +244,7 @@ def modify_jmps(pos,shift):
             tmpls[3]+=shift
             codeseq[i]=tuple(tmpls)
     
-def Action(num,sstack,cstack,astack):
+def Action(num,sstack,cstack,astack,linepos):
     global symtable,domain,tmpcnt,codeseq
     if num in [41,42,43,44]:
         value=astack[-1][_value]
@@ -274,6 +279,8 @@ def Action(num,sstack,cstack,astack):
         u1=astack[-1]
         tmp=gentmp()
         tmptype=maxtype(t1[_etype],u1[_etype])
+        if tmptype=="error":
+            print("type error in line",linepos)
         symappend(tmp,tmptype)
         codeseq.append(("*" if num==33 else "/",t1[_value],u1[_value],tmp))
         codeseq.append(("jz",tmp,None,None))
@@ -285,6 +292,8 @@ def Action(num,sstack,cstack,astack):
         t1=astack[-1]
         tmp=gentmp()
         tmptype=maxtype(e1[_etype],t1[_etype])
+        if tmptype=="error":
+            print("type error in line",linepos)
         symappend(tmp,tmptype)
         codeseq.append(("+" if num==30 else "-",e1[_value],t1[_value],tmp))
         codeseq.append(("jz",tmp,None,None))
@@ -397,7 +406,7 @@ def Action(num,sstack,cstack,astack):
         codeseq.append(("*",val,offset(etype),tmp))
         codeseq.append(("[]",srcname,tmp,tmpname))
         if type(etype)==str:
-            print("error")
+            print("undefined error in line",linepos)
             return ()
         return (tmpname,etype[1],idname,loc1[_offset])
     
@@ -513,7 +522,9 @@ def Action(num,sstack,cstack,astack):
     elif num==4:
         id1=astack[-2]
         t1=astack[-3]
-        symappend(id1[_name],t1[_type])
+        judge=symappend(id1[_name],t1[_type])
+        if judge=="error":
+            print("redefine error in line",linepos)
         return ()
     
     elif num in [2,3]:
@@ -535,14 +546,15 @@ def Action(num,sstack,cstack,astack):
 
 """-----------------------------------------Action end-------------------------------------------------------------"""
 def Parser(src):
-    global PTable
+    global PTable,error
     src+=[[("$",)]]
     sstack=[0]
     cstack=[("$",)]
     astack=[()]
+    cnt=0
     for i,line in enumerate(src):
         j=0
-        while j<len(line):
+        while j<len(line) and not error:
             top=sstack[-1]
             token=line[j][0]
             if token in PTable[top]:#合法
@@ -554,19 +566,22 @@ def Parser(src):
                     astack.append(solvetoken(line[j]))
                     sstack.append(PTable[top][token])
                     j+=1
+                    cnt+=1
+                    print("状态栈:",sstack,"符号栈:",cstack,"输入带位置:",cnt,"动作:移入")
                 else:#归约和错误
                     tokentmp=PTable[top][token][0]#tokentmp为归约到的非终结符号
                     isepl=PTable[top][token][1]
                     num=solvenum(PTable[top][token])
                     if not isepl:#归约为空
-                        attr=Action(num,sstack,cstack,astack)
+                        attr=Action(num,sstack,cstack,astack,i)
                         token=tokentmp
                         cstack.append(token)
                         astack.append(attr)
                         top=sstack[-1]
                         sstack.append(PTable[top][token])
+                        print("状态栈:",sstack,"符号栈:",cstack,"输入带位置:",cnt,"动作:归约r"+str(num))
                     elif tokentmp in PTable[sstack[-len(PTable[top][token])]]:#归约
-                        attr=Action(num,sstack,cstack,astack)
+                        attr=Action(num,sstack,cstack,astack,i)
                         for k in range(len(PTable[top][token])-1):
                             sstack.pop()
                             cstack.pop()
@@ -576,13 +591,18 @@ def Parser(src):
                         astack.append(attr)
                         top=sstack[-1]
                         sstack.append(PTable[top][token])
+                        print("状态栈:",sstack,"符号栈:",cstack,"输入带位置:",cnt,"动作:归约r"+str(num))
                     else:#错误
-                        print("reduce error in line",i+1)
+                        error=True
+                        print("reduce error in line",i)
                         j+=1
-                print("状态栈：",sstack,"符号栈：",cstack)
+                        cnt+=1
+                
             else:
-                print("syntax error in line",i+1)
+                error=True
+                print("syntax error in line",i)
                 j+=1
+                cnt+=1
                 
 if __name__=="__main__":
     with open("test.lex","r") as f:
@@ -600,61 +620,62 @@ if __name__=="__main__":
         codeseq.append(("nop",None,None,None))
 ##-------------------code del------------------------##
 ##-----------------none code del---------------------##
-        codewithlabel=[]
-        for i,item in enumerate(codeseq):
-            if item[0].startswith("j") and item[3]!=None:
-                itmp=item[3]
-                while codeseq[itmp][0].startswith("j") and codeseq[itmp][3]==None:
-                    itmp+=1
-                else:
-                    item=(item[0],item[1],item[2],itmp)
-            codewithlabel.append([i,item])
-        deltable=set()
-        for item in codewithlabel:
-            code=item[1]
-            if code[0].startswith("j") and code[3]==None:
-                deltable.add(item[0])
-        codetmp=[]
-        for i,item in enumerate(codewithlabel):
-            if i not in deltable:
-                codetmp.append(item)
-        maptable={}
-        for i,item in enumerate(codetmp):
-            maptable[item[0]]=i
-        codeseq=[]
-        for i,item in enumerate(codetmp):
-            code=list(item[1])
-            if code[0].startswith("j"):
-                code[3]=maptable[code[3]]
-            codeseq.append(tuple(code))
+        if not error:
+            codewithlabel=[]
+            for i,item in enumerate(codeseq):
+                if item[0].startswith("j") and item[3]!=None:
+                    itmp=item[3]
+                    while codeseq[itmp][0].startswith("j") and codeseq[itmp][3]==None:
+                        itmp+=1
+                    else:
+                        item=(item[0],item[1],item[2],itmp)
+                codewithlabel.append([i,item])
+            deltable=set()
+            for item in codewithlabel:
+                code=item[1]
+                if code[0].startswith("j") and code[3]==None:
+                    deltable.add(item[0])
+            codetmp=[]
+            for i,item in enumerate(codewithlabel):
+                if i not in deltable:
+                    codetmp.append(item)
+            maptable={}
+            for i,item in enumerate(codetmp):
+                maptable[item[0]]=i
+            codeseq=[]
+            for i,item in enumerate(codetmp):
+                code=list(item[1])
+                if code[0].startswith("j"):
+                    code[3]=maptable[code[3]]
+                codeseq.append(tuple(code))
 ##--------------near goto code del-------------------##
-        codewithlabel=[]
-        for i,item in enumerate(codeseq):
-            if item[0].startswith("j") and item[3]!=i+1:
-                itmp=item[3]
-                while codeseq[itmp][0].startswith("j") and codeseq[itmp][3]==itmp+1:
-                    itmp+=1
-                else:
-                    item=(item[0],item[1],item[2],itmp)
-            codewithlabel.append([i,item])
-        deltable=set()
-        for item in codewithlabel:
-            code=item[1]
-            if code[0].startswith("j") and code[3]==item[0]+1:
-                deltable.add(item[0])
-        codetmp=[]
-        for i,item in enumerate(codewithlabel):
-            if i not in deltable:
-                codetmp.append(item)
-        maptable={}
-        for i,item in enumerate(codetmp):
-            maptable[item[0]]=i
-        codeseq=[]
-        for i,item in enumerate(codetmp):
-            code=list(item[1])
-            if code[0].startswith("j"):
-                code[3]=maptable[code[3]]
-            codeseq.append([i,tuple(code)])
+            codewithlabel=[]
+            for i,item in enumerate(codeseq):
+                if item[0].startswith("j") and item[3]!=i+1:
+                    itmp=item[3]
+                    while codeseq[itmp][0].startswith("j") and codeseq[itmp][3]==itmp+1:
+                        itmp+=1
+                    else:
+                        item=(item[0],item[1],item[2],itmp)
+                codewithlabel.append([i,item])
+            deltable=set()
+            for item in codewithlabel:
+                code=item[1]
+                if code[0].startswith("j") and code[3]==item[0]+1:
+                    deltable.add(item[0])
+            codetmp=[]
+            for i,item in enumerate(codewithlabel):
+                if i not in deltable:
+                    codetmp.append(item)
+            maptable={}
+            for i,item in enumerate(codetmp):
+                maptable[item[0]]=i
+            codeseq=[]
+            for i,item in enumerate(codetmp):
+                code=list(item[1])
+                if code[0].startswith("j"):
+                    code[3]=maptable[code[3]]
+                codeseq.append([i,tuple(code)])
 ##------------------code del end---------------------##
     if not error:
         with open("test.ir","w") as f:

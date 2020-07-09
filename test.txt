@@ -1,7 +1,7 @@
 {
-	int x;int j;float v;float[100] s;
+	int x;int j;int i;float v;int[100] a;
 	while(true){
-	do i=i+1; while(a[i]<v);
+	do i=i+1; while(a[i]<x);
 	if(i>=j)break;
 	}
 }

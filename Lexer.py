@@ -4,6 +4,7 @@ Created on Sun Jun 21 01:17:27 2020
 
 @author: HP
 """
+import sys
 
 Key_word=["if","else","while","do","break","true","false"]
 Type=["int","char","bool","float"]
@@ -105,9 +106,13 @@ def getch(i,line):
         return False
 if __name__=="__main__":
     with open("test.txt","r") as f:
-        src=f.readlines()
-        obj=Lexer(src)
-        for items in obj:
-            for item in items:
-                print(item,end="\t")
-            print()
+        old=sys.stdout
+        with open("test.lex","w") as t:
+            sys.stdout=t
+            src=f.readlines()
+            obj=Lexer(src)
+            for items in obj:
+                for item in items:
+                    print(item,end="\t")
+                print()
+            sys.stdout=old

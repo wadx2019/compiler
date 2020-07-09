@@ -4,6 +4,8 @@ Created on Sun Jun 21 03:14:40 2020
 
 @author: HP
 """
+import os
+import pickle
 
 G=[["program","block"],
    ["block","{","decls","stmts","}"],
@@ -32,6 +34,11 @@ final=["{","}","id","[","]","basic","if","(",")","else","while","do","break",";"
    ["A","d"]]
 unfinal=["S'","S","A"]
 final=["a","b","c","d"]"""
+"""G=[["S'","S"],
+   ["S","if","e","then","S"],["S","if","e","then","S","else","S"],["S","while","e","do","S"],["S","begin","L","end"],["S","s"],
+   ["L","L",";","S"],["L","S"]]
+unfinal=["S'","S","L"]
+final=["if","then","else","e","s",";","while","begin","end","do"]"""
 symbols=unfinal+final
 
 def first(X=None):
@@ -71,7 +78,6 @@ def first(X=None):
         return f
                        
 FIRST=first()
-
 def closure(items):
     global G
     update=True
@@ -125,7 +131,6 @@ def itemsofG():
         C=C+Ctmp
     return C
 
-ItemsOfG=itemsofG()
 
 def build():
     global ItemsOfG
@@ -147,13 +152,24 @@ def build():
                 ptable[i][sym]=nxt
     return ptable
 
-PTable=build()
+if os.path.exists("ptable.pickle") and os.path.exists("items.pickle"):
+    with open("items.pickle","rb") as ipkl:
+        ItemsOfG=pickle.load(ipkl)
+        with open("ptable.pickle","rb") as ppkl:
+            PTable=pickle.load(ppkl)
+else:
+    ItemsOfG=itemsofG()
+    PTable=build()
+
+def solvenum(product):
+    return G.index(list(product))
 
 def Parser(src):
     global PTable
     src+=[[("$",)]]
     sstack=[0]
     cstack=[("$",)]
+    cnt=0
     for i,line in enumerate(src):
         j=0
         while j<len(line):
@@ -167,14 +183,18 @@ def Parser(src):
                     cstack.append(line[j])
                     sstack.append(PTable[top][token])
                     j+=1
+                    cnt+=1
+                    print("状态栈:",sstack,"符号栈:",cstack,"输入带位置:",cnt,"动作:移入")
                 else:
                     tokentmp=PTable[top][token][0]#tokentmp为归约到的非终结符号
                     isepl=PTable[top][token][1]
+                    num=solvenum(PTable[top][token])
                     if not isepl:
                         token=tokentmp
                         cstack.append(token)
                         top=sstack[-1]
                         sstack.append(PTable[top][token])
+                        print("状态栈:",sstack,"符号栈:",cstack,"输入带位置:",cnt,"动作:归约r"+str(num))
                     elif tokentmp in PTable[sstack[-len(PTable[top][token])]]:
                         
                         for k in range(len(PTable[top][token])-1):
@@ -184,13 +204,15 @@ def Parser(src):
                         cstack.append(token)
                         top=sstack[-1]
                         sstack.append(PTable[top][token])
+                        print("状态栈:",sstack,"符号栈:",cstack,"输入带位置:",cnt,"动作:归约r"+str(num))
                     else:
-                        print("reduce error in line",i+1)
+                        print("reduce error in line",i)
                         j+=1
-                print("状态栈：",sstack,"符号栈：",cstack)
+                        cnt+=1
             else:
-                print("syntax error in line",i+1)
+                print("syntax error in line",i)
                 j+=1
+                cnt+=1
                 
         
 if __name__=="__main__":
